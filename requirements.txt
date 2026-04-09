@@ -1,2 +1,2 @@
 streamlit
-reportlab
+reportlab>=3.6.12
