@@ -1,2 +1,3 @@
 streamlit
-reportlab>=3.6.12
+reportlab
+aztec-code-generator
