@@ -1,23 +1,37 @@
 import streamlit as st
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from aztec_code_generator import AztecCode
 import io
 import re
+import os
 
 # --- NASTAVENIA STRÁNKY ---
 st.set_page_config(page_title="Aztec Generator PRO", layout="wide")
 
+# --- REGISTRÁCIA FONTU PRE DIAKRITIKU ---
+# Stiahni si FreeSans.ttf alebo Arial.ttf a ulož ho k scriptu.
+# Ak súbor neexistuje, použije sa Helvetica (ale bez diakritiky).
+font_path = "FreeSans.ttf" 
+font_bold_path = "FreeSans-Bold.ttf"
+
+if os.path.exists(font_path) and os.path.exists(font_bold_path):
+    pdfmetrics.registerFont(TTFont('CustomFont', font_path))
+    pdfmetrics.registerFont(TTFont('CustomFont-Bold', font_bold_path))
+    FONT_NAME = "CustomFont"
+    FONT_BOLD = "CustomFont-Bold"
+else:
+    FONT_NAME = "Helvetica"
+    FONT_BOLD = "Helvetica-Bold"
+    st.warning("⚠️ Súbory 'FreeSans.ttf' a 'FreeSans-Bold.ttf' neboli nájdené. Diakritika sa nemusí zobraziť správne. Prosím, pridaj ich do priečinka so skriptom.")
+
 def generate_pdf(data_list, params):
-    """
-    data_list očakáva zoznam slovníkov: [{'code': 'USER123', 'label1': 'USER123', 'label2': 'Meno'}, ...]
-    """
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
 
-    # Rozmery bunky
     box_width = page_width / params['cols']
     box_height = page_height / params['rows']
 
@@ -51,7 +65,7 @@ def generate_pdf(data_list, params):
             
         c.translate(-draw_w / 2, -draw_h / 2)
 
-        # Rámik (jemný sivý)
+        # Rámik
         c.setLineWidth(0.1)
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
         c.rect(0, 0, draw_w, draw_h)
@@ -59,24 +73,21 @@ def generate_pdf(data_list, params):
         # Výpočet veľkosti kódu
         az_size = min(draw_w, draw_h) * params['code_size_factor']
         az_x = (draw_w - az_size) / 2
-        # Posun kódu vyššie, aby uvoľnil miesto pre dva riadky textu
         az_y = (draw_h - az_size) / 2 + (draw_h * 0.15)
         
-        # Kreslenie Aztec kódu (len z ID)
         draw_aztec_manual(c, az_x, az_y, item['code'], az_size)
 
-        # Texty pod kódom
         c.setFillColorRGB(0, 0, 0)
         
-        # 1. riadok (ID/Lokácia) - Bold
+        # 1. riadok (ID) - BOLD
         font_size1 = min(draw_w, draw_h) * 0.11
-        c.setFont("Helvetica-Bold", font_size1)
+        c.setFont(FONT_BOLD, font_size1)
         c.drawCentredString(draw_w / 2, (draw_h * 0.18), item['label1'])
         
-        # 2. riadok (Meno) - Normal (ak existuje)
+        # 2. riadok (Meno) - NORMAL
         if item['label2']:
             font_size2 = min(draw_w, draw_h) * 0.08
-            c.setFont("Helvetica", font_size2)
+            c.setFont(FONT_NAME, font_size2)
             c.drawCentredString(draw_w / 2, (draw_h * 0.07), item['label2'])
 
         c.restoreState()
@@ -88,9 +99,7 @@ def generate_pdf(data_list, params):
         row = pos // params['cols']
         x = col * box_width
         y = page_height - (row + 1) * box_height
-        
         draw_label(c, x, y, item)
-        
         if (i + 1) % locs_per_page == 0 and (i + 1) < len(data_list):
             c.showPage()
             
@@ -156,7 +165,7 @@ with col2:
     st.subheader("Nastavenia PDF")
     cols = st.number_input("Stĺpce:", 1, 15, 6)
     rows = st.number_input("Riadky:", 1, 25, 8)
-    code_size = st.slider("Veľkosť kódu:", 0.3, 0.9, 0.55) # Mierne zmenšené kvôli 2 riadkom textu
+    code_size = st.slider("Veľkosť kódu:", 0.3, 0.9, 0.55)
     rotate_labels = st.checkbox("Otočiť o 90°", value=True)
     
     if st.button("🚀 Generovať", type="primary"):
