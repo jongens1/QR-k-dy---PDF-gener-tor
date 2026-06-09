@@ -12,8 +12,6 @@ import os
 st.set_page_config(page_title="Aztec Generator PRO", layout="wide")
 
 # --- REGISTRÁCIA FONTU PRE DIAKRITIKU ---
-# Stiahni si FreeSans.ttf alebo Arial.ttf a ulož ho k scriptu.
-# Ak súbor neexistuje, použije sa Helvetica (ale bez diakritiky).
 font_path = "FreeSans.ttf" 
 font_bold_path = "FreeSans-Bold.ttf"
 
@@ -25,7 +23,10 @@ if os.path.exists(font_path) and os.path.exists(font_bold_path):
 else:
     FONT_NAME = "Helvetica"
     FONT_BOLD = "Helvetica-Bold"
-    st.warning("⚠️ Súbory 'FreeSans.ttf' a 'FreeSans-Bold.ttf' neboli nájdené. Diakritika sa nemusí zobraziť správne. Prosím, pridaj ich do priečinka so skriptom.")
+    # Ak nie je font, v Streamlite vypíšeme varovanie len raz
+    if 'font_warned' not in st.session_state:
+        st.warning("⚠️ Súbory 'FreeSans.ttf' neboli nájdené. Diakritika nemusí fungovať.")
+        st.session_state.font_warned = True
 
 def generate_pdf(data_list, params):
     buffer = io.BytesIO()
@@ -49,7 +50,7 @@ def generate_pdf(data_list, params):
                                y + (n - 1 - row_idx) * module_size,
                                module_size, module_size, fill=1, stroke=0)
         except Exception as e:
-            st.error(f"Chyba pri Aztec: {e}")
+            st.error(f"Chyba pri Aztec ({data}): {e}")
 
     def draw_label(c, x, y, item):
         c.saveState()
@@ -65,26 +66,25 @@ def generate_pdf(data_list, params):
             
         c.translate(-draw_w / 2, -draw_h / 2)
 
-        # Rámik
         c.setLineWidth(0.1)
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
         c.rect(0, 0, draw_w, draw_h)
 
-        # Výpočet veľkosti kódu
         az_size = min(draw_w, draw_h) * params['code_size_factor']
         az_x = (draw_w - az_size) / 2
         az_y = (draw_h - az_size) / 2 + (draw_h * 0.15)
         
+        # Kreslíme kód z transformovanej hodnoty (XL...)
         draw_aztec_manual(c, az_x, az_y, item['code'], az_size)
 
         c.setFillColorRGB(0, 0, 0)
         
-        # 1. riadok (ID) - BOLD
+        # 1. riadok (Pôvodné ID: USER12345)
         font_size1 = min(draw_w, draw_h) * 0.11
         c.setFont(FONT_BOLD, font_size1)
         c.drawCentredString(draw_w / 2, (draw_h * 0.18), item['label1'])
         
-        # 2. riadok (Meno) - NORMAL
+        # 2. riadok (Meno)
         if item['label2']:
             font_size2 = min(draw_w, draw_h) * 0.08
             c.setFont(FONT_NAME, font_size2)
@@ -115,6 +115,7 @@ col1, col2 = st.columns([2, 1])
 data_to_print = []
 
 if vstup_mode == "Automatický rozsah":
+    # (Ponechané bez zmeny)
     with col1:
         st.subheader("Konfigurácia")
         c1, c2 = st.columns(2)
@@ -125,7 +126,6 @@ if vstup_mode == "Automatický rozsah":
         s_s, s_e = st.columns(2)
         s_s = s_s.number_input("Blok 2 od:", 1, 99, 1)
         s_e = s_e.number_input("Blok 2 do:", 1, 99, 10)
-        
         prefix_range = [f"{n}{l}" for n in range(f_n_s, f_n_e + 1) for l in [chr(i) for i in range(ord(f_l_s), ord(f_l_e) + 1)]]
         for p in prefix_range:
             for s in range(s_s, s_e + 1):
@@ -140,25 +140,37 @@ elif vstup_mode == "Ručný zoznam":
             for line in lines:
                 data_to_print.append({'code': line, 'label1': line, 'label2': ''})
 
-else: # Depá - users
+else: # --- DEPÁ - USERS (UPRAVENÁ LOGIKA) ---
     with col1:
-        st.info("Formát: USER12345 - Meno Priezvisko")
+        st.info("Formát: USER12345 - Meno Priezvisko. Kód bude transformovaný na XL00012345.")
         input_text = st.text_area("Vložte zoznam používateľov:", height=300)
         if input_text:
             lines = [x.strip() for x in input_text.split('\n') if x.strip()]
             for line in lines:
+                # Rozdelenie na USER časť a Meno
                 if '-' in line:
                     parts = line.split('-', 1)
-                    user_id = parts[0].strip()
-                    user_name = parts[1].strip()
+                    user_id = parts[0].strip()   # Napr. "USER12345"
+                    user_name = parts[1].strip() # Napr. "Jozef Mrkva"
                 else:
                     user_id = line.strip()
                     user_name = ""
                 
+                # TRANSFORMÁCIA PRE KÓD:
+                # 1. Nájdeme všetky číslice v user_id
+                numbers_only = "".join(re.findall(r'\d+', user_id))
+                
+                if numbers_only:
+                    # 2. Doplníme na 8 miest nulami a pridáme XL
+                    transformed_code = f"XL{numbers_only.zfill(8)}"
+                else:
+                    # Ak by tam náhodou neboli čísla, necháme pôvodný text
+                    transformed_code = user_id
+                
                 data_to_print.append({
-                    'code': user_id, 
-                    'label1': user_id, 
-                    'label2': user_name
+                    'code': transformed_code, # Toto ide do Aztec kódu
+                    'label1': user_id,        # Toto sa vytlačí (USER12345)
+                    'label2': user_name       # Toto sa vytlačí (Meno)
                 })
 
 with col2:
