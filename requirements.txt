@@ -1,3 +1,4 @@
 streamlit
 reportlab
 aztec-code-generator
+qrcode
