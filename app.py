@@ -96,6 +96,7 @@ def generate_pdf(data_list, params):
 
         c.setFillColorRGB(0, 0, 0)
         if item['text_to_print']:
+            # Písmo prispôsobené veľkosti bunky
             font_size = min(draw_w, draw_h) * 0.10
             c.setFont(FONT_BOLD, font_size)
             c.drawCentredString(draw_w / 2, (draw_h * 0.12), item['text_to_print'])
@@ -116,6 +117,7 @@ def generate_pdf(data_list, params):
     buffer.seek(0)
     return buffer
 
+# --- UI ---
 st.title("🔳 Code Generator PRO")
 
 vstup_mode = st.radio("Spôsob zadania:", ["Automatický rozsah", "Ručný zoznam", "Depá - users"], horizontal=True)
@@ -142,16 +144,19 @@ if vstup_mode == "Automatický rozsah":
 
 elif vstup_mode == "Ručný zoznam":
     with col1:
-        st.info("Formát: KÓD - TEXT (napr. TGGD1302 - Miskolc A). Ak pomlčku vynecháte, kód aj text budú rovnaké.")
-        input_text = st.text_area("Vložte zoznam:", height=300, placeholder="TGGD1302 - Miskolc A\nTGGD1347 - Budapest B")
+        st.info("💡 Formát: KÓD ; TEXT (napr. MOKR-ABtrasa1 ; Miskolc A). Pomlčky v názvoch sú teraz povolené.")
+        input_text = st.text_area("Vložte zoznam (každý riadok jeden kód):", height=300, 
+                                 placeholder="MOKR-ABtrasa1 ; Miskolc A\nTGGD-1302 ; Budapešť")
         if input_text:
             lines = [x.strip() for x in input_text.split('\n') if x.strip()]
             for line in lines:
-                if '-' in line:
-                    parts = line.split('-', 1)
+                # Rozdeľujeme podľa bodkočiarky
+                if ';' in line:
+                    parts = line.split(';', 1)
                     code_val = parts[0].strip()
                     text_val = parts[1].strip()
                 else:
+                    # Ak tam nie je bodkočiarka, celá riadka je kód aj text
                     code_val = line
                     text_val = line
                 
