@@ -15,6 +15,7 @@ st.set_page_config(page_title="Code Generator PRO", layout="wide")
 # --- REGISTRÁCIA FONTU PRE DIAKRITIKU ---
 font_path = "FreeSans.ttf"
 font_bold_path = "FreeSans-Bold.ttf"
+
 if os.path.exists(font_path) and os.path.exists(font_bold_path):
     pdfmetrics.registerFont(TTFont('CustomFont', font_path))
     pdfmetrics.registerFont(TTFont('CustomFont-Bold', font_bold_path))
@@ -61,10 +62,27 @@ def draw_qr_manual(c, x, y, data, size):
     except Exception as e:
         st.error(f"Chyba pri QR kóde ({data}): {e}")
 
+def draw_fitted_text(c, text, center_x, y, max_width, font_name, start_font_size, min_font_size=4):
+    """
+    Vykreslí text zarovnaný na stred. Ak presahuje max_width,
+    dynamicky zmenšuje veľkosť písma tak, aby sa zmestil.
+    """
+    font_size = start_font_size
+    c.setFont(font_name, font_size)
+    text_width = c.stringWidth(text, font_name, font_size)
+    
+    while text_width > max_width and font_size > min_font_size:
+        font_size -= 0.5
+        c.setFont(font_name, font_size)
+        text_width = c.stringWidth(text, font_name, font_size)
+        
+    c.drawCentredString(center_x, y, text)
+
 def generate_pdf(data_list, params):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_width, page_height = A4
+
     box_width = page_width / params['cols']
     box_height = page_height / params['rows']
 
@@ -81,25 +99,50 @@ def generate_pdf(data_list, params):
             draw_w, draw_h = box_width, box_height
 
         c.translate(-draw_w / 2, -draw_h / 2)
+
+        # Rámček nálepky
         c.setLineWidth(0.1)
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
         c.rect(0, 0, draw_w, draw_h)
+
+        code_val = item['code']
+        desc_val = item['text_to_print']
         
-        az_size = min(draw_w, draw_h) * params['code_size_factor']
-        az_x = (draw_w - az_size) / 2
-        az_y = (draw_h - az_size) / 2 + (draw_h * 0.1)
-
-        if params['code_type'] == "Aztec":
-            draw_aztec_manual(c, az_x, az_y, item['code'], az_size)
-        else:
-            draw_qr_manual(c, az_x, az_y, item['code'], az_size)
-
+        # Maximálna šírka textu (so 4% okrajom po stranách)
+        max_text_w = draw_w * 0.92
         c.setFillColorRGB(0, 0, 0)
-        if item['text_to_print']:
-            # Písmo prispôsobené veľkosti bunky
-            font_size = min(draw_w, draw_h) * 0.10
-            c.setFont(FONT_BOLD, font_size)
-            c.drawCentredString(draw_w / 2, (draw_h * 0.12), item['text_to_print'])
+
+        # Kontrola, či máme odlišný kód a popis
+        has_distinct_desc = desc_val and (desc_val != code_val)
+
+        if has_distinct_desc:
+            # 1. KÓD NAD QR KÓDOM
+            top_font_size = min(draw_w, draw_h) * 0.08
+            draw_fitted_text(c, code_val, draw_w / 2, draw_h * 0.88, max_text_w, FONT_BOLD, top_font_size)
+
+            # 2. POPIS POD QR KÓDOM
+            bottom_font_size = min(draw_w, draw_h) * 0.08
+            draw_fitted_text(c, desc_val, draw_w / 2, draw_h * 0.06, max_text_w, FONT_BOLD, bottom_font_size)
+
+            # 3. QR KÓD UPROSTRED
+            az_size = min(draw_w * 0.85, draw_h * 0.68) * params['code_size_factor']
+            az_x = (draw_w - az_size) / 2
+            az_y = (draw_h - az_size) / 2
+        else:
+            # Ak je len kód bez samostatného popisu
+            font_size = min(draw_w, draw_h) * 0.09
+            draw_fitted_text(c, code_val, draw_w / 2, draw_h * 0.08, max_text_w, FONT_BOLD, font_size)
+
+            az_size = min(draw_w, draw_h * 0.75) * params['code_size_factor']
+            az_x = (draw_w - az_size) / 2
+            az_y = (draw_h - az_size) / 2 + (draw_h * 0.06)
+
+        # Generovanie kódov
+        if params['code_type'] == "Aztec":
+            draw_aztec_manual(c, az_x, az_y, code_val, az_size)
+        else:
+            draw_qr_manual(c, az_x, az_y, code_val, az_size)
+
         c.restoreState()
 
     locs_per_page = params['cols'] * params['rows']
@@ -110,6 +153,7 @@ def generate_pdf(data_list, params):
         x = col * box_width
         y = page_height - (row + 1) * box_height
         draw_label(c, x, y, item)
+
         if (i + 1) % locs_per_page == 0 and (i + 1) < len(data_list):
             c.showPage()
 
@@ -123,6 +167,7 @@ st.title("🔳 Code Generator PRO")
 vstup_mode = st.radio("Spôsob zadania:", ["Automatický rozsah", "Ručný zoznam", "Depá - users"], horizontal=True)
 
 col1, col2 = st.columns([2, 1])
+
 data_to_print = []
 
 if vstup_mode == "Automatický rozsah":
@@ -135,7 +180,7 @@ if vstup_mode == "Automatický rozsah":
         f_l_e = c2.selectbox("Písmeno do:", [chr(i) for i in range(65, 91)], index=2)
         s_s_val = st.number_input("Blok 2 od:", 1, 99, 1)
         s_e_val = st.number_input("Blok 2 do:", 1, 99, 10)
-        
+
         prefix_range = [f"{n}{l}" for n in range(f_n_s, f_n_e + 1) for l in [chr(i) for i in range(ord(f_l_s), ord(f_l_e) + 1)]]
         for p in prefix_range:
             for s in range(s_s_val, s_e_val + 1):
@@ -144,24 +189,22 @@ if vstup_mode == "Automatický rozsah":
 
 elif vstup_mode == "Ručný zoznam":
     with col1:
-        st.info("💡 Formát: KÓD ; TEXT (napr. MOKR-ABtrasa1 ; Miskolc A). Pomlčky v názvoch sú teraz povolené.")
-        input_text = st.text_area("Vložte zoznam (každý riadok jeden kód):", height=300, 
-                                 placeholder="MOKR-ABtrasa1 ; Miskolc A\nTGGD-1302 ; Budapešť")
+        st.info("💡 Formát: KÓD ; TEXT (napr. MOKR-ABtrasa1 ; AB - HU - Miskolc A). Pomlčky v názvoch sú povolené.")
+        input_text = st.text_area("Vložte zoznam (každý riadok jeden kód):", height=300,
+                                 placeholder="MOKR-ABtrasa1 ; AB - HU - Miskolc A\nTGGD-1302 ; Budapešť")
         if input_text:
             lines = [x.strip() for x in input_text.split('\n') if x.strip()]
             for line in lines:
-                # Rozdeľujeme podľa bodkočiarky
                 if ';' in line:
                     parts = line.split(';', 1)
                     code_val = parts[0].strip()
                     text_val = parts[1].strip()
                 else:
-                    # Ak tam nie je bodkočiarka, celá riadka je kód aj text
                     code_val = line
                     text_val = line
-                
+
                 data_to_print.append({
-                    'code': code_val, 
+                    'code': code_val,
                     'text_to_print': text_val
                 })
 
@@ -182,7 +225,6 @@ else: # --- DEPÁ - USERS ---
 
                 numbers_only = "".join(re.findall(r'\d+', user_id))
                 transformed_code = f"XL{numbers_only.zfill(8)}" if numbers_only else user_id
-
                 data_to_print.append({
                     'code': transformed_code,
                     'text_to_print': user_name
@@ -191,17 +233,17 @@ else: # --- DEPÁ - USERS ---
 with col2:
     st.subheader("Nastavenia PDF")
     code_type = st.selectbox("Typ kódu:", ["QR Kód", "Aztec"])
-    cols = st.number_input("Stĺpce:", 1, 15, 6)
-    rows = st.number_input("Riadky:", 1, 25, 8)
+    cols = st.number_input("Stĺpce:", 1, 15, 4)
+    rows = st.number_input("Riadky:", 1, 25, 4)
     code_size = st.slider("Veľkosť kódu:", 0.3, 0.9, 0.6)
     rotate_labels = st.checkbox("Otočiť o 90°", value=True)
 
     if st.button("🚀 Generovať PDF", type="primary"):
         if data_to_print:
             params = {
-                'cols': cols, 
-                'rows': rows, 
-                'code_size_factor': code_size, 
+                'cols': cols,
+                'rows': rows,
+                'code_size_factor': code_size,
                 'rotate': rotate_labels,
                 'code_type': "Aztec" if code_type == "Aztec" else "QR"
             }
