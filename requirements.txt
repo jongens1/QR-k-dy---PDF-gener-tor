@@ -1,4 +1,5 @@
 streamlit
 reportlab
-aztec-code-generator
+aztec_code_generator
 qrcode
+pypdfium2
