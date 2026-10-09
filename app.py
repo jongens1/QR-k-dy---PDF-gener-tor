@@ -9,6 +9,7 @@ import qrcode
 import io
 import re
 import os
+import base64
 
 # --- NASTAVENIA STRÁNKY ---
 st.set_page_config(page_title="Code Generator PRO", layout="wide")
@@ -67,23 +68,16 @@ def draw_qr_manual(c, x, y, data, size):
 
 
 def draw_code128_manual(c, x, y, data, max_w, max_h):
-    """
-    Vykreslí čiarový kód Code 128 s prispôsobením šírky a výšky.
-    """
     try:
-        # Vytvorenie pomocného kódu pre zistenie základnej šírky (pri barWidth=1)
         test_bc = code128.Code128(str(data), barHeight=max_h, barWidth=1)
         raw_w = test_bc.width
 
         if raw_w > 0:
-            # Dynamický výpočet barWidth tak, aby sa zmestil do max_w
             calc_bar_width = max_w / raw_w
-            # Obmedzenie maximálnej hrúbky pri krátkych kódoh
             final_bar_width = min(calc_bar_width, 1.5)
 
             bc = code128.Code128(str(data), barHeight=max_h, barWidth=final_bar_width)
             actual_w = bc.width
-            # Horizontálne vycentrovanie
             start_x = x + (max_w - actual_w) / 2
             bc.drawOn(c, start_x, y)
     except Exception as e:
@@ -91,10 +85,6 @@ def draw_code128_manual(c, x, y, data, max_w, max_h):
 
 
 def draw_fitted_text(c, text, center_x, y, max_width, font_name, start_font_size, min_font_size=4):
-    """
-    Vykreslí text zarovnaný na stred. Ak presahuje max_width,
-    dynamicky zmenšuje veľkosť písma tak, aby sa zmestil.
-    """
     font_size = start_font_size
     c.setFont(font_name, font_size)
     text_width = c.stringWidth(text, font_name, font_size)
@@ -141,7 +131,7 @@ def generate_pdf(data_list, params):
         c.setFillColorRGB(0, 0, 0)
         has_distinct_desc = desc_val and (desc_val != code_val)
 
-        # --- LOGIKA PRE 2D KÓDY (QR / AZTEC) ---
+        # 2D KÓDY (QR / AZTEC)
         if params['code_type'] in ["QR", "Aztec"]:
             if has_distinct_desc:
                 top_font_size = min(draw_w, draw_h) * 0.08
@@ -166,7 +156,7 @@ def generate_pdf(data_list, params):
             else:
                 draw_qr_manual(c, code_x, code_y, code_val, code_size)
 
-        # --- LOGIKA PRE 1D ČIAROVÝ KÓD (CODE 128) ---
+        # 1D ČIAROVÝ KÓD (CODE 128)
         else:
             code_w = draw_w * 0.90 * params['code_size_factor']
             code_h = draw_h * 0.45 * params['code_size_factor']
@@ -207,6 +197,24 @@ def generate_pdf(data_list, params):
     c.save()
     buffer.seek(0)
     return buffer
+
+
+def render_pdf_preview(pdf_buffer):
+    """Zobrazí PDF priamo v rozhraní Streamlit."""
+    pdf_buffer.seek(0)
+    base64_pdf = base64.b64encode(pdf_buffer.read()).decode('utf-8')
+    pdf_buffer.seek(0)  # reset pozície pre stiahnutie
+
+    # Zobrazenie PDF pomocou iframe s prispôsobením na 1. stranu
+    pdf_display = f'''
+        <iframe src="data:application/pdf;base64,{base64_pdf}#page=1&view=FitH" 
+                width="100%" 
+                height="650" 
+                type="application/pdf"
+                style="border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        </iframe>
+    '''
+    st.markdown(pdf_display, unsafe_allow_html=True)
 
 
 # --- UI ---
@@ -283,7 +291,7 @@ with col2:
     code_size = st.slider("Veľkosť kódu:", 0.3, 1.0, 0.7)
     rotate_labels = st.checkbox("Otočiť o 90°", value=True)
 
-    if st.button("🚀 Generovať PDF", type="primary"):
+    if st.button("🚀 Generovať PDF / Náhľad", type="primary"):
         if data_to_print:
             params = {
                 'cols': cols,
@@ -292,7 +300,20 @@ with col2:
                 'rotate': rotate_labels,
                 'code_type': code_type
             }
-            pdf_buffer = generate_pdf(data_to_print, params)
-            st.download_button("⬇️ Stiahnuť PDF", pdf_buffer, "labels.pdf", "application/pdf")
+            # Uloženie vygenerovaného PDF do session state pre trvalé zobrazenie náhľadu
+            st.session_state['generated_pdf'] = generate_pdf(data_to_print, params)
         else:
             st.error("Zoznam je prázdny!")
+
+# --- SEKCIA NÁHĽADU A STIAHNUTIA ---
+if 'generated_pdf' in st.session_state:
+    pdf_buf = st.session_state['generated_pdf']
+
+    st.divider()
+    col_prev1, col_prev2 = st.columns([1, 4])
+    with col_prev1:
+        st.subheader("👁️ Náhľad PDF")
+        pdf_buf.seek(0)
+        st.download_button("⬇️ Stiahnuť PDF", pdf_buf, "labels.pdf", "application/pdf", type="primary")
+
+    render_pdf_preview(pdf_buf)
