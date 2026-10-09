@@ -9,7 +9,7 @@ import qrcode
 import io
 import re
 import os
-import base64
+import pypdfium2 as pdfium
 
 # --- NASTAVENIA STRÁNKY ---
 st.set_page_config(page_title="Code Generator PRO", layout="wide")
@@ -200,21 +200,16 @@ def generate_pdf(data_list, params):
 
 
 def render_pdf_preview(pdf_buffer):
-    """Zobrazí PDF priamo v rozhraní Streamlit."""
-    pdf_buffer.seek(0)
-    base64_pdf = base64.b64encode(pdf_buffer.read()).decode('utf-8')
-    pdf_buffer.seek(0)  # reset pozície pre stiahnutie
-
-    # Zobrazenie PDF pomocou iframe s prispôsobením na 1. stranu
-    pdf_display = f'''
-        <iframe src="data:application/pdf;base64,{base64_pdf}#page=1&view=FitH" 
-                width="100%" 
-                height="650" 
-                type="application/pdf"
-                style="border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-        </iframe>
-    '''
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    """Prevedie 1. stranu PDF na obrázok a zobrazí ho v Streamlite."""
+    try:
+        pdf_buffer.seek(0)
+        pdf = pdfium.PdfDocument(pdf_buffer)
+        first_page = pdf[0]
+        # Vykreslenie strany do PIL obrázku s vyššou kvalitou (scale=2)
+        image = first_page.render(scale=2).to_pil()
+        st.image(image, caption="Náhľad 1. strany", use_container_width=True)
+    except Exception as e:
+        st.error(f"Nepodarilo sa vygenerovať náhľad: {e}")
 
 
 # --- UI ---
@@ -300,7 +295,6 @@ with col2:
                 'rotate': rotate_labels,
                 'code_type': code_type
             }
-            # Uloženie vygenerovaného PDF do session state pre trvalé zobrazenie náhľadu
             st.session_state['generated_pdf'] = generate_pdf(data_to_print, params)
         else:
             st.error("Zoznam je prázdny!")
@@ -310,10 +304,11 @@ if 'generated_pdf' in st.session_state:
     pdf_buf = st.session_state['generated_pdf']
 
     st.divider()
-    col_prev1, col_prev2 = st.columns([1, 4])
+    col_prev1, col_prev2 = st.columns([1, 2])
     with col_prev1:
         st.subheader("👁️ Náhľad PDF")
         pdf_buf.seek(0)
         st.download_button("⬇️ Stiahnuť PDF", pdf_buf, "labels.pdf", "application/pdf", type="primary")
 
-    render_pdf_preview(pdf_buf)
+    with col_prev2:
+        render_pdf_preview(pdf_buf)
