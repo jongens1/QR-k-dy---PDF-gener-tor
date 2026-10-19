@@ -1,5 +1,5 @@
 streamlit
 reportlab
-aztec_code_generator
+aztec_code_generator>=0.12
 qrcode
 pypdfium2
